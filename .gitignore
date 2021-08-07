@@ -58,3 +58,6 @@ fabric.properties
 *.iml
 # modules.xml
 analysis_collect/target
+analysis_flink/target/
+
+logs/

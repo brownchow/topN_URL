@@ -18,7 +18,7 @@ public class InfoUtils {
     /**
      * URL池
      */
-    private static String[] urls = {"/a", "/b", "/c", "/d", "/e", "/f", "/g", "/h", "/i", "/g", "/k", "/l"};
+    private static String[] urls = {"/a", "/b", "/c", "/d", "/e", "/f", "/g", "/h", "/i", "/g", "/k", "/l", "/m", "/n", "/o", "/p", "/q", "/r", "/s", "/t", "/u", "/v", "/w", "/x", "/y", "/z"};
 
     /**
      * 生成11位手机号码  3 + 4 + 4
@@ -40,7 +40,7 @@ public class InfoUtils {
      * @return string
      */
     public static String getURL() {
-        int index = RandomUtil.randomInt(0, telFirst.length);
+        int index = RandomUtil.randomInt(0, urls.length);
         return urls[index];
     }
 

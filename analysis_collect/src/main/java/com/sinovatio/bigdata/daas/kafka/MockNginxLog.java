@@ -18,7 +18,7 @@ import java.io.IOException;
 public class MockNginxLog {
 
     public static void main(String[] args) throws Exception {
-        genFileData();
+        genKafkaData();
     }
 
     /**
@@ -49,7 +49,7 @@ public class MockNginxLog {
     private static void genKafkaData() {
         try {
             KafkaProducer producer = KafkaProducer.getInstance();
-            String topic = "topic-nginxlog";
+            String topic = "test-top10";
             while (true) {
                 String msg = "127.0.0.1" + " " + System.currentTimeMillis() + " " + InfoUtils.getURL();
                 System.out.println(msg);

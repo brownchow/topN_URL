@@ -37,6 +37,14 @@ import java.util.*;
 public class NginxLogUrlTopN {
 
     public static void main(String[] args) throws Exception {
+        readFromKafka();
+    }
+
+
+    /**
+     * 从kafka运行
+     */
+    public static void readFromKafka() throws Exception {
         //1.构建执行环境
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         //只有开启了CheckPointing,才会有重启策略
@@ -128,6 +136,81 @@ public class NginxLogUrlTopN {
                                 resultMap.put("data", result.toString());
                                 resultMap.put("create_time", new Date(timestamp - 1));
                                 EsClientUtil.getInstance().addIndexMap("url_hours_count", "url", resultMap);
+                            }
+                        });
+        process.print();
+        env.execute();
+    }
+
+    /**
+     * 从日志文件读取运行
+     */
+    public static void readFromLogFile() throws Exception {
+        String filePath = "/home/brown/nginxlog.txt";
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
+        env.enableCheckpointing(60000);
+        SingleOutputStreamOperator<String> process =
+                env.readTextFile(filePath)
+                        .process(new ProcessFunction<String, ApacheLogEvent>() {
+                            @Override
+                            public void processElement(String line, Context ctx, Collector<ApacheLogEvent> out) throws Exception {
+                                String[] dataArray = line.split("");
+                                ApacheLogEvent logEvent = new ApacheLogEvent(Long.parseLong(dataArray[1]), dataArray[2]);
+                                out.collect(logEvent);
+                            }
+                        })
+                        .assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<ApacheLogEvent>(Time.seconds(5)) {
+                            @Override
+                            public long extractTimestamp(ApacheLogEvent element) {
+                                return element.getEventTime();
+                            }
+                        })
+                        .keyBy("url")
+                        .timeWindow(Time.hours(1))
+                        .aggregate(new UrlCountAgg(), new WindowResult())
+                        .keyBy("windowEnd")
+                        .process(new KeyedProcessFunction<Tuple, ApacheUrlCount, String>() {
+                            private transient ValueState<List<ApacheUrlCount>> valueState;
+
+                            @Override
+                            public void open(Configuration parameters) throws Exception {
+                                ValueStateDescriptor<List<ApacheUrlCount>> valueStateDescriptor = new ValueStateDescriptor<>
+                                        ("list-state", TypeInformation.of(new TypeHint<List<ApacheUrlCount>>() {
+                                        }));
+                                valueState = getRuntimeContext().getState(valueStateDescriptor);
+                            }
+
+                            //处理每一个元素
+                            @Override
+                            public void processElement(ApacheUrlCount value, Context ctx, Collector<String> out) throws Exception {
+                                //获取状态值
+                                List<ApacheUrlCount> list = valueState.value();
+                                if (null == list) {
+                                    list = new ArrayList<>();
+                                }
+                                list.add(value);
+                                valueState.update(list);
+                                //注册定时器,当为窗口最后的时间时，通过加1触发定时器
+                                ctx.timerService().registerEventTimeTimer(value.getWindowEnd() + 1);
+                            }
+
+                            // 定时处理，排序操作取N
+                            @Override
+                            public void onTimer(long timestamp, OnTimerContext ctx, Collector<String> out) throws Exception {
+                                List<ApacheUrlCount> list = valueState.value();
+                                // 按访问量从大到小排
+                                list.sort(Comparator.comparing(ApacheUrlCount::getCount).thenComparing(ApacheUrlCount::getUrl).reversed());
+                                StringBuffer result = new StringBuffer();
+                                result.append("时间：").append(new Timestamp(timestamp - 1)).append("\n");
+                                for (int i = 0; i < 5; i++) {
+                                    result.append("NO").append(i + 1).append(":")
+                                            .append(" URL=").append(list.get(i).getUrl())
+                                            .append(" 访问量=").append(list.get(i).getCount()).append("\n");
+                                }
+                                result.append("=============================");
+                                valueState.update(null);
+                                out.collect(result.toString());
                             }
                         });
         process.print();
